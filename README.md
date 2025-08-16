@@ -1,4 +1,5 @@
-# Sand Simulation with Elements
+# Sand Simulation with Elementsd_simulation -lraylib -lm
+
 
 This project is an interactive sand simulation game that implements various materials with unique physics and interactions. Built using the Raylib library, the simulation allows users to create, manipulate, and observe complex interactions between different elements in a dynamic grid environment.
 
@@ -21,7 +22,7 @@ This project is an interactive sand simulation game that implements various mate
 | Material     | Behavior                  | Special Properties                          |
 |--------------|---------------------------|---------------------------------------------|
 | **Sand**     | Falls downward            | Displaces water and gas                     |
-| **Water**    | Flows downward/sideways   | Converts to acid when near acid             |
+| **Water**    | Flows downward/sideways   | Converts to acid when near acid(wip)        |
 | **Stone**    | Immovable solid           | Eroded by acid                              |
 | **Acid**     | Falls, erodes materials   | Converts water to acid, evaporates over time|
 | **Gas**      | Rises and spreads         | Ignites when near fire                      |
