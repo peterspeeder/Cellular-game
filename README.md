@@ -38,4 +38,4 @@ This project is an interactive sand simulation game that implements various mate
 
 ### Compilation
 ```bash
-gcc main.c -o sand_simulation -lraylib -lm
+gcc  -o run game.c -lraylib -lm
