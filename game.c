@@ -13,6 +13,9 @@
 #define ACID_GAS 7
 #define STEAM 8
 #define RAIN 9
+#define DIRT 10
+#define GRASS_SEED 11
+#define GRASS 12
 
 // Define acid color stages (from light to dark green)
 Color acidColors[5] = {
@@ -50,34 +53,42 @@ Color steamColors[3] = {
 Color rainColor = (Color){50, 150, 255, 220};
 
 // Physics functions
-bool updateSand(int gridHeight, int gridWidth, int** grid, int x, int y) {
+bool updateFalling(int gridHeight, int gridWidth, int** grid, int x, int y, int element) {
     if (y + 1 < gridHeight && grid[y + 1][x] == EMPTY) {
-        grid[y + 1][x] = SAND;
+        grid[y + 1][x] = element;
         grid[y][x] = EMPTY;
         return true;
     }
     if (y + 1 < gridHeight && (grid[y + 1][x] == WATER || grid[y + 1][x] == GAS || grid[y + 1][x] == ACID_GAS)) {
         int temp = grid[y + 1][x];
-        grid[y + 1][x] = SAND;
+        grid[y + 1][x] = element;
         grid[y][x] = temp;
         return true;
     }
 
     int dir = (GetRandomValue(0, 1) == 0) ? -1 : 1;
     if (x + dir >= 0 && x + dir < gridWidth && y + 1 < gridHeight && grid[y + 1][x + dir] == EMPTY) {
-        grid[y + 1][x + dir] = SAND;
+        grid[y + 1][x + dir] = element;
         grid[y][x] = EMPTY;
         return true;
     }
 
     int otherDir = -dir;
     if (x + otherDir >= 0 && x + otherDir < gridWidth && y + 1 < gridHeight && grid[y + 1][x + otherDir] == EMPTY) {
-        grid[y + 1][x + otherDir] = SAND;
+        grid[y + 1][x + otherDir] = element;
         grid[y][x] = EMPTY;
         return true;
     }
 
     return false;
+}
+
+bool updateSand(int gridHeight, int gridWidth, int** grid, int x, int y) {
+    return updateFalling(gridHeight, gridWidth, grid, x, y, SAND);
+}
+
+bool updateDirt(int gridHeight, int gridWidth, int** grid, int x, int y) {
+    return updateFalling(gridHeight, gridWidth, grid, x, y, DIRT);
 }
 
 bool updateWater(int gridHeight, int gridWidth, int** grid, int x, int y) {
@@ -505,6 +516,45 @@ bool updateRain(int gridHeight, int gridWidth, int** grid, int x, int y) {
     return false;
 }
 
+bool updateGrassSeed(int gridHeight, int gridWidth, int** grid, int x, int y) {
+    // Falling behavior
+    if (y+1 < gridHeight) {
+        if (grid[y+1][x] == EMPTY) {
+            grid[y+1][x] = GRASS_SEED;
+            grid[y][x] = EMPTY;
+            return true;
+        }
+        else if (grid[y+1][x] == WATER || grid[y+1][x] == GAS || grid[y+1][x] == ACID_GAS) {
+            int temp = grid[y+1][x];
+            grid[y+1][x] = GRASS_SEED;
+            grid[y][x] = temp;
+            return true;
+        }
+    }
+    
+    // Check if seed is on top of dirt
+    if (y+1 < gridHeight && grid[y+1][x] == DIRT) {
+        // Convert seed to grass
+        grid[y][x] = GRASS;
+        
+        // Grow grass upward (max 6 cells)
+        int currentY = y-1;
+        int grassCount = 0;
+        while (grassCount < 6 && currentY >= 0) {
+            if (grid[currentY][x] == EMPTY) {
+                grid[currentY][x] = GRASS;
+                grassCount++;
+                currentY--;
+            } else {
+                break;
+            }
+        }
+        return true;
+    }
+    
+    return false;
+}
+
 int main() {
     const int initialWidth = 800;
     const int initialHeight = 600;
@@ -560,6 +610,8 @@ int main() {
     Rectangle fireButton = { buttonSpacing, buttonSpacing*6 + buttonHeight*5, buttonWidth, buttonHeight };
     Rectangle eraseButton = { buttonSpacing, buttonSpacing*7 + buttonHeight*6, buttonWidth, buttonHeight };
     Rectangle eraseAllButton = { buttonSpacing, buttonSpacing*8 + buttonHeight*7, buttonWidth, buttonHeight };
+    Rectangle dirtButton = { buttonSpacing, buttonSpacing*9 + buttonHeight*8, buttonWidth, buttonHeight };
+    Rectangle grassSeedButton = { buttonSpacing, buttonSpacing*10 + buttonHeight*9, buttonWidth, buttonHeight };
 
     int currentMaterial = SAND;
     int brushSize = 3;
@@ -675,6 +727,12 @@ int main() {
                     }
                 }
             }
+            else if (CheckCollisionPointRec(mousePos, dirtButton)) {
+                currentMaterial = DIRT;
+            }
+            else if (CheckCollisionPointRec(mousePos, grassSeedButton)) {
+                currentMaterial = GRASS_SEED;
+            }
         }
 
         if (IsMouseButtonDown(MOUSE_LEFT_BUTTON) && mousePos.x > 150) {
@@ -703,22 +761,33 @@ int main() {
                     }
                 }
             }
+            else if (currentMaterial == GRASS_SEED) {
+                // Place only one seed at the mouse position
+                if (gridX >= 0 && gridX < gridWidth && gridY >= 0 && gridY < gridHeight) {
+                    // Only place if cell is empty
+                    if (grid[gridY][gridX] == EMPTY) {
+                        grid[gridY][gridX] = GRASS_SEED;
+                    }
+                }
+            }
             else {
                 for (int y = gridY - brushSize/2; y <= gridY + brushSize/2; y++) {
                     for (int x = gridX - brushSize/2; x <= gridX + brushSize/2; x++) {
                         if (x >= 0 && x < gridWidth && y >= 0 && y < gridHeight) {
                             if (currentMaterial == GAS) {
-                                if (grid[y][x] != STONE && grid[y][x] != ACID) {
+                                if (grid[y][x] != STONE && grid[y][x] != ACID && grid[y][x] != GRASS_SEED) {
                                     grid[y][x] = GAS;
                                     gasTimer[y][x] = 0;
                                     gasCooldown[y][x] = 0;
                                 }
                             }
                             else if (currentMaterial == ACID) {
-                                grid[y][x] = ACID;
-                                acidStage[y][x] = 0;
-                                acidTimer[y][x] = 0;
-                                acidGasCooldown[y][x] = 0;
+                                if (grid[y][x] != GRASS_SEED) {
+                                    grid[y][x] = ACID;
+                                    acidStage[y][x] = 0;
+                                    acidTimer[y][x] = 0;
+                                    acidGasCooldown[y][x] = 0;
+                                }
                             }
                             else if (currentMaterial == EMPTY) {
                                 grid[y][x] = EMPTY;
@@ -730,7 +799,7 @@ int main() {
                                 acidGasCooldown[y][x] = 0;
                                 steamTimer[y][x] = 0;
                             }
-                            else {
+                            else if (currentMaterial != GRASS_SEED) {
                                 grid[y][x] = currentMaterial;
                             }
                         }
@@ -795,6 +864,16 @@ int main() {
                             updated[y][x] = true;
                         }
                     }
+                    else if (grid[y][x] == DIRT) {
+                        if (updateDirt(gridHeight, gridWidth, grid, x, y)) {
+                            updated[y][x] = true;
+                        }
+                    }
+                    else if (grid[y][x] == GRASS_SEED) {
+                        if (updateGrassSeed(gridHeight, gridWidth, grid, x, y)) {
+                            updated[y][x] = true;
+                        }
+                    }
                 }
             }
         }
@@ -819,6 +898,9 @@ int main() {
         BeginDrawing();
             ClearBackground((Color){0, 0, 0, 255});
 
+            // Draw brush size in top-right corner
+            DrawText(TextFormat("Brush Size: %d", brushSize), GetScreenWidth() - 150, 10, 20, WHITE);
+
             DrawRectangleRec(sandButton, YELLOW);
             DrawRectangleRec(waterButton, BLUE);
             DrawRectangleRec(stoneButton, DARKGRAY);
@@ -827,6 +909,8 @@ int main() {
             DrawRectangleRec(fireButton, fireColors[0]);
             DrawRectangleRec(eraseButton, RED);
             DrawRectangleRec(eraseAllButton, (Color){200, 100, 100, 255});
+            DrawRectangleRec(dirtButton, (Color){139, 69, 19, 255});  // Brown
+            DrawRectangleRec(grassSeedButton, (Color){205, 133, 63, 255});  // Light brown
 
             DrawText("Sand", sandButton.x + 10, sandButton.y + 10, 20, BLACK);
             DrawText("Water", waterButton.x + 10, waterButton.y + 10, 20, BLACK);
@@ -836,6 +920,8 @@ int main() {
             DrawText("Fire", fireButton.x + 10, fireButton.y + 10, 20, BLACK);
             DrawText("Erase", eraseButton.x + 10, eraseButton.y + 10, 20, BLACK);
             DrawText("Clear All", eraseAllButton.x + 5, eraseAllButton.y + 10, 20, BLACK);
+            DrawText("Dirt", dirtButton.x + 10, dirtButton.y + 10, 20, BLACK);
+            DrawText("Seed", grassSeedButton.x + 10, grassSeedButton.y + 10, 20, BLACK);
 
             if (currentMaterial == SAND) {
                 DrawRectangleLinesEx(sandButton, 3, RED);
@@ -851,9 +937,11 @@ int main() {
                 DrawRectangleLinesEx(fireButton, 3, RED);
             } else if (currentMaterial == EMPTY) {
                 DrawRectangleLinesEx(eraseButton, 3, WHITE);
+            } else if (currentMaterial == DIRT) {
+                DrawRectangleLinesEx(dirtButton, 3, WHITE);
+            } else if (currentMaterial == GRASS_SEED) {
+                DrawRectangleLinesEx(grassSeedButton, 3, WHITE);
             }
-
-            DrawText(TextFormat("Brush: %d", brushSize), 10, GetScreenHeight() - 30, 20, BLACK);
 
             for (int y = 0; y < gridHeight; y++) {
                 for (int x = 0; x < gridWidth; x++) {
@@ -907,6 +995,12 @@ int main() {
                         DrawRectangle(posX, posY, gridSize, gridSize, steamColor);
                     } else if (grid[y][x] == RAIN) {
                         DrawRectangle(posX, posY, gridSize, gridSize, rainColor);
+                    } else if (grid[y][x] == DIRT) {
+                        DrawRectangle(posX, posY, gridSize, gridSize, (Color){139, 69, 19, 255}); // Brown
+                    } else if (grid[y][x] == GRASS_SEED) {
+                        DrawRectangle(posX, posY, gridSize, gridSize, (Color){205, 133, 63, 255}); // Light brown
+                    } else if (grid[y][x] == GRASS) {
+                        DrawRectangle(posX, posY, gridSize, gridSize, (Color){0, 128, 0, 255}); // Green
                     }
                 }
             }
