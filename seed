@@ -1,0 +1,331 @@
+#include "raylib.h"
+#include <stdlib.h>
+#include <stdbool.h>
+
+#define EMPTY 0
+#define WATER 1
+#define DIRT 2
+#define GRASS_SEED 3
+#define GRASS 4
+#define TALL_GRASS 5  // New type for tall grass
+
+int main() {
+    const int initialWidth = 800;
+    const int initialHeight = 600;
+    const int gridSize = 10;
+    const int buttonWidth = 80;
+    const int buttonHeight = 40;
+    const int buttonSpacing = 10;
+
+    SetConfigFlags(FLAG_WINDOW_RESIZABLE);
+    InitWindow(initialWidth, initialHeight, "Dirt & Water Ecosystem");
+
+    int gridWidth = (initialWidth - 150) / gridSize;
+    int gridHeight = initialHeight / gridSize;
+
+    int **grid = (int **)malloc(gridHeight * sizeof(int *));
+    bool **updated = (bool **)malloc(gridHeight * sizeof(bool *));
+
+    for (int y = 0; y < gridHeight; y++) {
+        grid[y] = (int *)malloc(gridWidth * sizeof(int));
+        updated[y] = (bool *)malloc(gridWidth * sizeof(bool));
+        for (int x = 0; x < gridWidth; x++) {
+            grid[y][x] = EMPTY;
+            updated[y][x] = false;
+        }
+    }
+
+    Rectangle waterButton = { buttonSpacing, buttonSpacing, buttonWidth, buttonHeight };
+    Rectangle dirtButton = { buttonSpacing, buttonSpacing*2 + buttonHeight, buttonWidth, buttonHeight };
+    Rectangle seedButton = { buttonSpacing, buttonSpacing*3 + buttonHeight*2, buttonWidth, buttonHeight };
+    Rectangle eraseButton = { buttonSpacing, buttonSpacing*4 + buttonHeight*3, buttonWidth, buttonHeight };
+    Rectangle eraseAllButton = { buttonSpacing, buttonSpacing*5 + buttonHeight*4, buttonWidth, buttonHeight };
+
+    int currentMaterial = WATER;
+    int brushSize = 3;
+
+    SetTargetFPS(60);
+
+    while (!WindowShouldClose()) {
+        if (IsWindowResized()) {
+            int newWidth = GetScreenWidth();
+            int newHeight = GetScreenHeight();
+            int newGridWidth = (newWidth - 150) / gridSize;
+            int newGridHeight = newHeight / gridSize;
+
+            if (newGridWidth != gridWidth || newGridHeight != gridHeight) {
+                for (int y = 0; y < gridHeight; y++) {
+                    free(grid[y]);
+                    free(updated[y]);
+                }
+                free(grid);
+                free(updated);
+
+                gridWidth = newGridWidth;
+                gridHeight = newGridHeight;
+
+                grid = (int **)malloc(gridHeight * sizeof(int *));
+                updated = (bool **)malloc(gridHeight * sizeof(bool *));
+
+                for (int y = 0; y < gridHeight; y++) {
+                    grid[y] = (int *)malloc(gridWidth * sizeof(int));
+                    updated[y] = (bool *)malloc(gridWidth * sizeof(bool));
+                    for (int x = 0; x < gridWidth; x++) {
+                        grid[y][x] = EMPTY;
+                        updated[y][x] = false;
+                    }
+                }
+            }
+        }
+
+        Vector2 mousePos = GetMousePosition();
+
+        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+            if (CheckCollisionPointRec(mousePos, waterButton)) {
+                currentMaterial = WATER;
+            }
+            else if (CheckCollisionPointRec(mousePos, dirtButton)) {
+                currentMaterial = DIRT;
+            }
+            else if (CheckCollisionPointRec(mousePos, seedButton)) {
+                currentMaterial = GRASS_SEED;
+            }
+            else if (CheckCollisionPointRec(mousePos, eraseButton)) {
+                currentMaterial = EMPTY;
+            }
+            else if (CheckCollisionPointRec(mousePos, eraseAllButton)) {
+                for (int y = 0; y < gridHeight; y++) {
+                    for (int x = 0; x < gridWidth; x++) {
+                        grid[y][x] = EMPTY;
+                    }
+                }
+            }
+            // CHANGE: Only allow seed placement on empty cells
+            else if (mousePos.x > 150 && currentMaterial == GRASS_SEED) {
+                int gridX = (mousePos.x - 150) / gridSize;
+                int gridY = mousePos.y / gridSize;
+
+                if (gridX >= 0 && gridX < gridWidth && gridY >= 0 && gridY < gridHeight) {
+                    // Only allow placement on empty cells (not grass or anything else)
+                    if (grid[gridY][gridX] == EMPTY) {
+                        grid[gridY][gridX] = GRASS_SEED;
+                    }
+                }
+            }
+        }
+
+        if (IsMouseButtonDown(MOUSE_LEFT_BUTTON) && mousePos.x > 150) {
+            int gridX = (mousePos.x - 150) / gridSize;
+            int gridY = mousePos.y / gridSize;
+
+            if (currentMaterial != GRASS_SEED) {
+                for (int y = gridY - brushSize/2; y <= gridY + brushSize/2; y++) {
+                    for (int x = gridX - brushSize/2; x <= gridX + brushSize/2; x++) {
+                        if (x >= 0 && x < gridWidth && y >= 0 && y < gridHeight) {
+                            // For erase tool, allow overwriting everything
+                            if (currentMaterial == EMPTY) {
+                                grid[y][x] = EMPTY;
+                            }
+                            // For other materials, preserve seeds but allow overwriting grass
+                            else if (grid[y][x] != GRASS_SEED) {
+                                grid[y][x] = currentMaterial;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        int wheelMove = GetMouseWheelMove();
+        if (wheelMove != 0) {
+            brushSize += wheelMove;
+            if (brushSize < 1) brushSize = 1;
+            if (brushSize > 10) brushSize = 10;
+        }
+
+        for (int y = 0; y < gridHeight; y++) {
+            for (int x = 0; x < gridWidth; x++) {
+                updated[y][x] = false;
+            }
+        }
+
+        for (int y = gridHeight - 1; y >= 0; y--) {
+            for (int x = 0; x < gridWidth; x++) {
+                if (!updated[y][x]) {
+                    if (grid[y][x] == WATER) {
+                        // Water physics
+                        if (y + 1 < gridHeight && grid[y + 1][x] == EMPTY) {
+                            grid[y + 1][x] = WATER;
+                            grid[y][x] = EMPTY;
+                            updated[y][x] = true;
+                        }
+                        else if (y + 1 < gridHeight && grid[y + 1][x] == GRASS_SEED) {
+                            grid[y + 1][x] = WATER;
+                            grid[y][x] = GRASS_SEED;
+                            updated[y][x] = true;
+                        }
+                        else {
+                            int dir = (GetRandomValue(0, 1) == 0) ? -1 : 1;
+                            if (x + dir >= 0 && x + dir < gridWidth) {
+                                if (y + 1 < gridHeight && grid[y + 1][x + dir] == EMPTY) {
+                                    grid[y + 1][x + dir] = WATER;
+                                    grid[y][x] = EMPTY;
+                                    updated[y][x] = true;
+                                }
+                                else if (grid[y][x + dir] == EMPTY) {
+                                    grid[y][x + dir] = WATER;
+                                    grid[y][x] = EMPTY;
+                                    updated[y][x] = true;
+                                }
+                            }
+                        }
+                    }
+                    else if (grid[y][x] == DIRT) {
+                        // Dirt physics (falling like sand)
+                        if (y + 1 < gridHeight && grid[y + 1][x] == EMPTY) {
+                            grid[y + 1][x] = DIRT;
+                            grid[y][x] = EMPTY;
+                            updated[y][x] = true;
+                        }
+                        else if (y + 1 < gridHeight && grid[y + 1][x] == WATER) {
+                            grid[y + 1][x] = DIRT;
+                            grid[y][x] = WATER;
+                            updated[y][x] = true;
+                        }
+                        else {
+                            int dir = (GetRandomValue(0, 1) == 0) ? -1 : 1;
+                            if (x + dir >= 0 && x + dir < gridWidth && y + 1 < gridHeight) {
+                                if (grid[y + 1][x + dir] == EMPTY) {
+                                    grid[y + 1][x + dir] = DIRT;
+                                    grid[y][x] = EMPTY;
+                                    updated[y][x] = true;
+                                }
+                                else if (grid[y + 1][x + dir] == WATER) {
+                                    grid[y + 1][x + dir] = DIRT;
+                                    grid[y][x] = WATER;
+                                    updated[y][x] = true;
+                                }
+                            }
+                        }
+                    }
+                    else if (grid[y][x] == GRASS_SEED) {
+                        // Seed physics
+                        if (y + 1 < gridHeight) {
+                            if (grid[y + 1][x] == EMPTY) {
+                                grid[y + 1][x] = GRASS_SEED;
+                                grid[y][x] = EMPTY;
+                                updated[y][x] = true;
+                            }
+                            else if (grid[y + 1][x] == WATER) {
+                                int temp = grid[y + 1][x];
+                                grid[y + 1][x] = GRASS_SEED;
+                                grid[y][x] = temp;
+                                updated[y][x] = true;
+                            }
+                        }
+                        
+                        // Convert seed to grass when on dirt
+                        if (y + 1 < gridHeight && grid[y + 1][x] == DIRT) {
+                            grid[y][x] = GRASS;
+                            updated[y][x] = true;
+                            
+                            // Grow grass upward (3 cells)
+                            int currentY = y-1;
+                            int grassCount = 0;
+                            while (grassCount < 3 && currentY >= 0) {
+                                if (grid[currentY][x] == EMPTY) {
+                                    grid[currentY][x] = GRASS;
+                                    grassCount++;
+                                    currentY--;
+                                } else {
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        // New: Convert seed to tall grass when watered and on grass
+                        if (y + 1 < gridHeight && grid[y + 1][x] == WATER && 
+                            y - 1 >= 0 && grid[y - 1][x] == GRASS) {
+                            // Convert to tall grass
+                            grid[y][x] = TALL_GRASS;
+                            updated[y][x] = true;
+                            
+                            // Grow tall grass upward (12 cells)
+                            int currentY = y-2; // Start above the existing grass
+                            int grassCount = 0;
+                            while (grassCount < 12 && currentY >= 0) {
+                                if (grid[currentY][x] == EMPTY) {
+                                    grid[currentY][x] = TALL_GRASS;
+                                    grassCount++;
+                                    currentY--;
+                                } else {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        BeginDrawing();
+            ClearBackground((Color){0, 0, 0, 255});
+            DrawText(TextFormat("Brush Size: %d", brushSize), GetScreenWidth() - 150, 10, 20, WHITE);
+
+            // Draw buttons
+            DrawRectangleRec(waterButton, BLUE);
+            DrawRectangleRec(dirtButton, (Color){139, 69, 19, 255});
+            DrawRectangleRec(seedButton, (Color){205, 133, 63, 255});
+            DrawRectangleRec(eraseButton, RED);
+            DrawRectangleRec(eraseAllButton, (Color){200, 100, 100, 255});
+
+            DrawText("Water", waterButton.x + 10, waterButton.y + 10, 20, BLACK);
+            DrawText("Dirt", dirtButton.x + 10, dirtButton.y + 10, 20, BLACK);
+            DrawText("Seed", seedButton.x + 10, seedButton.y + 10, 20, BLACK);
+            DrawText("Erase", eraseButton.x + 10, eraseButton.y + 10, 20, BLACK);
+            DrawText("Clear All", eraseAllButton.x + 5, eraseAllButton.y + 10, 20, BLACK);
+
+            // Highlight selected button
+            if (currentMaterial == WATER) {
+                DrawRectangleLinesEx(waterButton, 3, YELLOW);
+            } else if (currentMaterial == DIRT) {
+                DrawRectangleLinesEx(dirtButton, 3, YELLOW);
+            } else if (currentMaterial == GRASS_SEED) {
+                DrawRectangleLinesEx(seedButton, 3, YELLOW);
+            } else if (currentMaterial == EMPTY) {
+                DrawRectangleLinesEx(eraseButton, 3, YELLOW);
+            }
+
+            // Draw grid
+            for (int y = 0; y < gridHeight; y++) {
+                for (int x = 0; x < gridWidth; x++) {
+                    int posX = 150 + x * gridSize;
+                    int posY = y * gridSize;
+  
+                    if (grid[y][x] == WATER) {
+                        DrawRectangle(posX, posY, gridSize, gridSize, BLUE);
+                    } else if (grid[y][x] == DIRT) {
+                        DrawRectangle(posX, posY, gridSize, gridSize, (Color){139, 69, 19, 255});
+                    } else if (grid[y][x] == GRASS_SEED) {
+                        DrawRectangle(posX, posY, gridSize, gridSize, (Color){205, 133, 63, 255});
+                    } else if (grid[y][x] == GRASS) {
+                        DrawRectangle(posX, posY, gridSize, gridSize, (Color){0, 200, 0, 255});
+                    } else if (grid[y][x] == TALL_GRASS) {
+                        DrawRectangle(posX, posY, gridSize, gridSize, (Color){0, 150, 0, 255}); // Darker green for tall grass
+                    }
+                }
+            }
+        EndDrawing();
+    }
+
+    // Clean up
+    for (int y = 0; y < gridHeight; y++) {
+        free(grid[y]);
+        free(updated[y]);
+    }
+    free(grid);
+    free(updated);
+
+    CloseWindow();
+    return 0;
+}
